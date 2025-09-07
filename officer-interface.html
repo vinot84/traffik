@@ -159,6 +159,16 @@
           notes: ''
         });
         const [showCitationForm, setShowCitationForm] = useState(false);
+        const [issuedCitations, setIssuedCitations] = useState([]);
+        const [officerProfile, setOfficerProfile] = useState({
+          department: 'San Francisco Police Department',
+          unit: 'Traffic Division',
+          shift: 'Day Shift (7:00 AM - 3:00 PM)',
+          yearsOfService: 8,
+          citationsThisMonth: 45,
+          commendations: 3
+        });
+        const [showProfileModal, setShowProfileModal] = useState(false);
         const messagesEndRef = useRef(null);
 
         const showNotification = (message, type = 'info') => {
@@ -307,6 +317,10 @@
 
           setCitationForm({ violation: '', amount: '', notes: '' });
           setShowCitationForm(false);
+          
+          // Add to issued citations list
+          setIssuedCitations(prev => [...prev, citation]);
+          
           showNotification(`Citation ${citation.number} issued to ${connectedDriver.driverName}`);
         };
 
@@ -391,6 +405,13 @@
                   </div>
                   
                   <div className="flex items-center space-x-4">
+                    <button
+                      onClick={() => setShowProfileModal(true)}
+                      className="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors flex items-center"
+                    >
+                      👤 Profile
+                    </button>
+                    
                     <div className="flex items-center">
                       <span className={`status-indicator ${connectedDriver ? 'status-connected' : availableDrivers.length > 0 ? 'status-waiting' : 'status-offline'}`}></span>
                       <span className="text-sm text-gray-600">
@@ -404,6 +425,7 @@
                         setConnectedDriver(null);
                         setMessages([]);
                         setAvailableDrivers([]);
+                        setIssuedCitations([]);
                       }}
                       className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
                     >
@@ -638,6 +660,130 @@
                     >
                       Cancel
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Citation History Panel */}
+              {issuedCitations.length > 0 && (
+                <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-900">Today's Citations</h2>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Citation #</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Driver</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Violation</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {issuedCitations.map((citation) => (
+                          <tr key={citation.number}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{citation.number}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{connectedDriver?.driverName || 'N/A'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{citation.violation}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${citation.amount}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(citation.issuedAt).toLocaleTimeString()}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                citation.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {citation.status.toUpperCase()}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Profile Modal */}
+              {showProfileModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4">
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-2xl font-bold text-gray-900">Officer Profile</h2>
+                      <button
+                        onClick={() => setShowProfileModal(false)}
+                        className="text-gray-400 hover:text-gray-600 text-2xl"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Basic Info */}
+                      <div className="space-y-4">
+                        <div className="text-center">
+                          <div className="w-24 h-24 bg-green-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                            <span className="text-white text-3xl">👮‍♀️</span>
+                          </div>
+                          <h3 className="text-xl font-semibold text-gray-900">{officerName}</h3>
+                          <p className="text-gray-600">Badge #{badgeNumber}</p>
+                          <p className="text-sm text-gray-500">{email}</p>
+                        </div>
+                        
+                        <div className="border-t pt-4">
+                          <div className="space-y-3 text-sm">
+                            <div><strong>Department:</strong> {officerProfile.department}</div>
+                            <div><strong>Unit:</strong> {officerProfile.unit}</div>
+                            <div><strong>Shift:</strong> {officerProfile.shift}</div>
+                            <div><strong>Years of Service:</strong> {officerProfile.yearsOfService} years</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Performance Stats */}
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-semibold text-gray-900">Performance Statistics</h4>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-blue-50 p-4 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-blue-600">{officerProfile.citationsThisMonth}</div>
+                            <div className="text-sm text-blue-800">Citations This Month</div>
+                          </div>
+                          
+                          <div className="bg-green-50 p-4 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-green-600">{officerProfile.commendations}</div>
+                            <div className="text-sm text-green-800">Commendations</div>
+                          </div>
+                          
+                          <div className="bg-purple-50 p-4 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-purple-600">{issuedCitations.length}</div>
+                            <div className="text-sm text-purple-800">Citations Today</div>
+                          </div>
+                          
+                          <div className="bg-yellow-50 p-4 rounded-lg text-center">
+                            <div className="text-2xl font-bold text-yellow-600">{Math.floor(Math.random() * 20) + 10}</div>
+                            <div className="text-sm text-yellow-800">Traffic Stops Today</div>
+                          </div>
+                        </div>
+                        
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          <h5 className="font-medium text-gray-900 mb-2">Recent Achievements</h5>
+                          <ul className="text-sm text-gray-600 space-y-1">
+                            <li>🏆 Officer of the Month - February 2024</li>
+                            <li>🎖️ Traffic Safety Excellence Award</li>
+                            <li>📜 Community Service Recognition</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-6 flex justify-end">
+                      <button
+                        onClick={() => setShowProfileModal(false)}
+                        className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

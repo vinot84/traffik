@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traafik - Admin License Verification</title>
+    
+    <!-- React and React DOM -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+      body { 
+        font-family: system-ui, -apple-system, sans-serif; 
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+      }
+      
+      .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
+      }
+      
+      .status-pending { background-color: #f59e0b; }
+      .status-verified { background-color: #10b981; }
+      .status-rejected { background-color: #ef4444; }
+      
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      
+      .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #10b981;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+      }
+      
+      .notification.show {
+        transform: translateX(0);
+      }
+      
+      .license-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+      
+      .license-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+      }
+      
+      .verification-panel {
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      
+      .llm-analysis {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        border: 1px solid #bae6fd;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+      const { createRoot } = ReactDOM;
+
+      // Shared storage for communication
+      const SharedStorage = {
+        setItem: (key, value) => {
+          localStorage.setItem(`traafik_${key}`, JSON.stringify({
+            data: value,
+            timestamp: Date.now()
+          }));
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: `traafik_${key}`,
+            newValue: JSON.stringify({ data: value, timestamp: Date.now() })
+          }));
+        },
+        
+        getItem: (key) => {
+          const item = localStorage.getItem(`traafik_${key}`);
+          return item ? JSON.parse(item).data : null;
+        },
+        
+        subscribe: (key, callback) => {
+          const handleStorage = (e) => {
+            if (e.key === `traafik_${key}` && e.newValue) {
+              const parsed = JSON.parse(e.newValue);
+              callback(parsed.data);
+            }
+          };
+          window.addEventListener('storage', handleStorage);
+          return () => window.removeEventListener('storage', handleStorage);
+        }
+      };
+
+      // Mock LLM API for license verification
+      const LLMVerificationService = {
+        async analyzeLicense(imageData) {
+          // Simulate API delay
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Mock LLM analysis - in real implementation, this would call OpenAI Vision API
+          const mockAnalysis = {
+            isValid: Math.random() > 0.2, // 80% success rate for demo
+            confidence: Math.random() * 0.3 + 0.7, // 70-100% confidence
+            extractedData: {
+              name: "JOHN DRIVER SMITH",
+              licenseNumber: "DL" + Math.floor(Math.random() * 10000000),
+              dateOfBirth: "1985-03-15",
+              expirationDate: "2026-03-15",
+              state: "CA",
+              class: "C",
+              address: "123 Main St, San Francisco, CA 94102"
+            },
+            verificationChecks: {
+              textReadability: Math.random() > 0.1,
+              photoQuality: Math.random() > 0.15,
+              securityFeatures: Math.random() > 0.1,
+              formatValid: Math.random() > 0.05,
+              notExpired: true,
+              hologramPresent: Math.random() > 0.2
+            },
+            issues: [],
+            recommendation: null
+          };
+
+          // Add issues if verification fails
+          if (!mockAnalysis.isValid || mockAnalysis.confidence < 0.75) {
+            mockAnalysis.issues = [
+              "Image quality insufficient for clear text extraction",
+              "Security features not clearly visible",
+              "Possible document alteration detected"
+            ].filter(() => Math.random() > 0.5);
+            
+            mockAnalysis.recommendation = mockAnalysis.issues.length > 0 ? 
+              "Request new photo with better lighting and focus" : 
+              "Manual review recommended";
+          }
+
+          return mockAnalysis;
+        }
+      };
+
+      // Notification Component
+      function Notification({ message, show, onClose, type = 'info' }) {
+        useEffect(() => {
+          if (show) {
+            const timer = setTimeout(onClose, 4000);
+            return () => clearTimeout(timer);
+          }
+        }, [show, onClose]);
+
+        const bgColor = type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#10b981';
+
+        return (
+          <div 
+            className={`notification ${show ? 'show' : ''}`}
+            style={{ backgroundColor: bgColor }}
+          >
+            {message}
+          </div>
+        );
+      }
+
+      // Admin Application
+      function AdminApp() {
+        const [isLoggedIn, setIsLoggedIn] = useState(false);
+        const [email, setEmail] = useState('');
+        const [adminName, setAdminName] = useState('');
+        const [pendingLicenses, setPendingLicenses] = useState([]);
+        const [selectedLicense, setSelectedLicense] = useState(null);
+        const [verificationResult, setVerificationResult] = useState(null);
+        const [isAnalyzing, setIsAnalyzing] = useState(false);
+        const [notification, setNotification] = useState({ show: false, message: '', type: 'info' });
+
+        const showNotification = (message, type = 'info') => {
+          setNotification({ show: true, message, type });
+        };
+
+        const hideNotification = () => {
+          setNotification({ show: false, message: '', type: 'info' });
+        };
+
+        // Listen for new license uploads
+        useEffect(() => {
+          const unsubscribeLicenseUpload = SharedStorage.subscribe('license_upload', (data) => {
+            setPendingLicenses(prev => {
+              const existing = prev.find(l => l.driverEmail === data.driverEmail);
+              if (existing) {
+                return prev.map(l => l.driverEmail === data.driverEmail ? data : l);
+              } else {
+                return [...prev, data];
+              }
+            });
+            showNotification(`New license upload from ${data.driverName}`, 'info');
+          });
+
+          return () => {
+            unsubscribeLicenseUpload();
+          };
+        }, []);
+
+        const handleLogin = (e) => {
+          e.preventDefault();
+          if (email.includes('@') && email.toLowerCase().includes('admin')) {
+            const name = `Admin ${email.split('@')[0].replace('admin', '').toUpperCase()}`;
+            setAdminName(name);
+            setIsLoggedIn(true);
+            showNotification(`Welcome ${name}! License verification system ready.`);
+          } else {
+            showNotification('Please enter an admin email address', 'error');
+          }
+        };
+
+        const analyzeLicense = async (license) => {
+          setSelectedLicense(license);
+          setIsAnalyzing(true);
+          setVerificationResult(null);
+
+          try {
+            showNotification('Analyzing license with LLM model...', 'info');
+            const result = await LLMVerificationService.analyzeLicense(license.imageData);
+            setVerificationResult(result);
+            
+            if (result.isValid && result.confidence >= 0.75) {
+              showNotification('License analysis complete - VERIFIED', 'success');
+            } else {
+              showNotification('License analysis complete - VERIFICATION FAILED', 'warning');
+            }
+          } catch (error) {
+            showNotification('Error analyzing license: ' + error.message, 'error');
+          } finally {
+            setIsAnalyzing(false);
+          }
+        };
+
+        const approveVerification = () => {
+          if (!selectedLicense || !verificationResult) return;
+
+          // Send verification result to driver
+          SharedStorage.setItem('license_verification_result', {
+            driverEmail: selectedLicense.driverEmail,
+            status: 'verified',
+            verifiedBy: adminName,
+            verifiedAt: new Date().toISOString(),
+            extractedData: verificationResult.extractedData,
+            confidence: verificationResult.confidence
+          });
+
+          // Remove from pending list
+          setPendingLicenses(prev => prev.filter(l => l.driverEmail !== selectedLicense.driverEmail));
+          setSelectedLicense(null);
+          setVerificationResult(null);
+          
+          showNotification('License approved and driver notified!', 'success');
+        };
+
+        const rejectVerification = (reason) => {
+          if (!selectedLicense) return;
+
+          // Send rejection to driver
+          SharedStorage.setItem('license_verification_result', {
+            driverEmail: selectedLicense.driverEmail,
+            status: 'rejected',
+            rejectedBy: adminName,
+            rejectedAt: new Date().toISOString(),
+            reason: reason || 'License verification failed',
+            issues: verificationResult?.issues || []
+          });
+
+          // Remove from pending list
+          setPendingLicenses(prev => prev.filter(l => l.driverEmail !== selectedLicense.driverEmail));
+          setSelectedLicense(null);
+          setVerificationResult(null);
+          
+          showNotification('License rejected and driver notified to resubmit.', 'warning');
+        };
+
+        if (!isLoggedIn) {
+          return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+              <Notification 
+                message={notification.message} 
+                show={notification.show} 
+                onClose={hideNotification}
+                type={notification.type}
+              />
+              
+              <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 bg-purple-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                    <span className="text-white text-2xl">👨‍💼</span>
+                  </div>
+                  <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
+                  <p className="text-gray-600">License Verification System</p>
+                </div>
+                
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Admin Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="admin@traafik.com"
+                      required
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
+                    />
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    className="w-full bg-purple-600 text-white p-3 rounded-md font-medium hover:bg-purple-700 transition-colors"
+                  >
+                    Login as Admin
+                  </button>
+                </form>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Notification 
+              message={notification.message} 
+              show={notification.show} 
+              onClose={hideNotification}
+              type={notification.type}
+            />
+            
+            {/* Header */}
+            <div className="bg-white shadow-sm border-b">
+              <div className="max-w-7xl mx-auto px-4 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-lg">👨‍💼</span>
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-semibold text-gray-900">Admin Interface</h1>
+                      <p className="text-sm text-gray-600">{adminName} • License Verification System</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <span className={`status-indicator ${pendingLicenses.length > 0 ? 'status-pending' : 'status-verified'}`}></span>
+                      <span className="text-sm text-gray-600">
+                        {pendingLicenses.length} Pending Verifications
+                      </span>
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setIsLoggedIn(false);
+                        setPendingLicenses([]);
+                        setSelectedLicense(null);
+                        setVerificationResult(null);
+                      }}
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto p-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Pending Licenses Queue */}
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-900">Pending Verifications</h2>
+                  
+                  {pendingLicenses.length === 0 ? (
+                    <div className="text-center text-gray-500 py-8">
+                      <div className="text-4xl mb-4">📋</div>
+                      <p>No pending license verifications</p>
+                      <p className="text-sm">New uploads will appear here</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {pendingLicenses.map((license, index) => (
+                        <div
+                          key={index}
+                          className={`license-card p-4 border rounded-lg ${
+                            selectedLicense?.driverEmail === license.driverEmail 
+                              ? 'border-purple-500 bg-purple-50' 
+                              : 'border-gray-200 bg-gray-50'
+                          }`}
+                          onClick={() => analyzeLicense(license)}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-medium text-gray-900">{license.driverName}</h3>
+                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                              PENDING
+                            </span>
+                          </div>
+                          
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <div><strong>Email:</strong> {license.driverEmail}</div>
+                            <div><strong>File:</strong> {license.fileName}</div>
+                            <div><strong>Uploaded:</strong> {new Date(license.uploadedAt).toLocaleTimeString()}</div>
+                          </div>
+                          
+                          <div className="mt-3">
+                            <img 
+                              src={license.imageData} 
+                              alt="Driver License" 
+                              className="w-full h-20 object-contain border rounded"
+                            />
+                          </div>
+                          
+                          <button
+                            className="w-full mt-3 bg-purple-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-purple-700 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              analyzeLicense(license);
+                            }}
+                          >
+                            🔍 Analyze with LLM
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* License Analysis Panel */}
+                <div className="lg:col-span-2">
+                  {selectedLicense ? (
+                    <div className="bg-white rounded-lg shadow-md p-6 verification-panel">
+                      <h2 className="text-lg font-semibold mb-4 text-gray-900">License Verification Analysis</h2>
+                      
+                      {/* License Image */}
+                      <div className="mb-6">
+                        <img 
+                          src={selectedLicense.imageData} 
+                          alt="Driver License" 
+                          className="w-full max-h-64 object-contain border rounded-lg"
+                        />
+                      </div>
+
+                      {/* Analysis Results */}
+                      {isAnalyzing ? (
+                        <div className="text-center py-8">
+                          <div className="text-4xl mb-4">🤖</div>
+                          <div className="text-lg font-medium text-gray-900 mb-2">Analyzing License...</div>
+                          <div className="text-gray-600 mb-4">LLM model processing image data</div>
+                          <div className="flex justify-center">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                          </div>
+                        </div>
+                      ) : verificationResult ? (
+                        <div className="space-y-6">
+                          {/* Overall Result */}
+                          <div className={`p-4 rounded-lg border-l-4 ${
+                            verificationResult.isValid && verificationResult.confidence >= 0.75
+                              ? 'border-green-500 bg-green-50'
+                              : 'border-red-500 bg-red-50'
+                          }`}>
+                            <div className="flex items-center mb-2">
+                              <span className="text-2xl mr-2">
+                                {verificationResult.isValid && verificationResult.confidence >= 0.75 ? '✅' : '❌'}
+                              </span>
+                              <h3 className="font-medium text-lg">
+                                {verificationResult.isValid && verificationResult.confidence >= 0.75 
+                                  ? 'License Verified' 
+                                  : 'Verification Failed'}
+                              </h3>
+                            </div>
+                            <div className="text-sm">
+                              <strong>Confidence:</strong> {(verificationResult.confidence * 100).toFixed(1)}%
+                            </div>
+                          </div>
+
+                          {/* LLM Analysis */}
+                          <div className="llm-analysis p-4 rounded-lg">
+                            <h3 className="font-medium text-gray-900 mb-3 flex items-center">
+                              <span className="mr-2">🤖</span>
+                              LLM Extracted Data
+                            </h3>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div><strong>Name:</strong> {verificationResult.extractedData.name}</div>
+                              <div><strong>License #:</strong> {verificationResult.extractedData.licenseNumber}</div>
+                              <div><strong>Date of Birth:</strong> {verificationResult.extractedData.dateOfBirth}</div>
+                              <div><strong>Expiration:</strong> {verificationResult.extractedData.expirationDate}</div>
+                              <div><strong>State:</strong> {verificationResult.extractedData.state}</div>
+                              <div><strong>Class:</strong> {verificationResult.extractedData.class}</div>
+                            </div>
+                            <div className="mt-3 text-sm">
+                              <strong>Address:</strong> {verificationResult.extractedData.address}
+                            </div>
+                          </div>
+
+                          {/* Verification Checks */}
+                          <div className="bg-gray-50 p-4 rounded-lg">
+                            <h3 className="font-medium text-gray-900 mb-3">Verification Checks</h3>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              {Object.entries(verificationResult.verificationChecks).map(([check, passed]) => (
+                                <div key={check} className="flex items-center">
+                                  <span className={`mr-2 ${passed ? 'text-green-600' : 'text-red-600'}`}>
+                                    {passed ? '✓' : '✗'}
+                                  </span>
+                                  <span className="capitalize">{check.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Issues */}
+                          {verificationResult.issues.length > 0 && (
+                            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4">
+                              <h3 className="font-medium text-yellow-900 mb-2">⚠️ Issues Detected</h3>
+                              <ul className="text-sm text-yellow-800 space-y-1">
+                                {verificationResult.issues.map((issue, index) => (
+                                  <li key={index}>• {issue}</li>
+                                ))}
+                              </ul>
+                              {verificationResult.recommendation && (
+                                <div className="mt-3 text-sm">
+                                  <strong>Recommendation:</strong> {verificationResult.recommendation}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
+                          <div className="flex space-x-4 pt-4">
+                            {verificationResult.isValid && verificationResult.confidence >= 0.75 ? (
+                              <button
+                                onClick={approveVerification}
+                                className="flex-1 bg-green-600 text-white py-3 px-6 rounded-md font-medium hover:bg-green-700 transition-colors"
+                              >
+                                ✅ Approve Verification
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => rejectVerification('Automatic verification failed - manual review required')}
+                                className="flex-1 bg-red-600 text-white py-3 px-6 rounded-md font-medium hover:bg-red-700 transition-colors"
+                              >
+                                ❌ Reject License
+                              </button>
+                            )}
+                            
+                            <button
+                              onClick={() => rejectVerification('Request new photo - image quality insufficient')}
+                              className="bg-yellow-600 text-white py-3 px-6 rounded-md font-medium hover:bg-yellow-700 transition-colors"
+                            >
+                              📷 Request New Photo
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <div className="text-4xl mb-4">🔍</div>
+                          <p>Click "Analyze with LLM" to start verification process</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-lg shadow-md p-6">
+                      <div className="text-center py-12 text-gray-500">
+                        <div className="text-6xl mb-4">📄</div>
+                        <h3 className="text-lg font-medium mb-2">No License Selected</h3>
+                        <p>Select a pending license from the queue to begin verification</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Render the app
+      createRoot(document.getElementById('root')).render(<AdminApp />);
+    </script>
+  </body>
+</html>
