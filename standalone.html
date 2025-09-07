@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traafik - Remote Traffic Stops</title>
+    
+    <!-- React and React DOM -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Configure Tailwind -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              border: "hsl(214.3 31.8% 91.4%)",
+              input: "hsl(214.3 31.8% 91.4%)",
+              ring: "hsl(221.2 83.2% 53.3%)",
+              background: "hsl(0 0% 100%)",
+              foreground: "hsl(222.2 84% 4.9%)",
+              primary: {
+                DEFAULT: "hsl(221.2 83.2% 53.3%)",
+                foreground: "hsl(210 40% 98%)",
+              },
+              secondary: {
+                DEFAULT: "hsl(210 40% 96%)",
+                foreground: "hsl(222.2 84% 4.9%)",
+              },
+              destructive: {
+                DEFAULT: "hsl(0 84.2% 60.2%)",
+                foreground: "hsl(210 40% 98%)",
+              },
+              muted: {
+                DEFAULT: "hsl(210 40% 96%)",
+                foreground: "hsl(215.4 16.3% 46.9%)",
+              },
+              accent: {
+                DEFAULT: "hsl(210 40% 96%)",
+                foreground: "hsl(222.2 84% 4.9%)",
+              },
+            },
+            borderRadius: {
+              lg: "0.5rem",
+              md: "calc(0.5rem - 2px)",
+              sm: "calc(0.5rem - 4px)",
+            },
+          },
+        },
+      }
+    </script>
+    
+    <style>
+      body { 
+        font-family: system-ui, -apple-system, sans-serif; 
+        margin: 0;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+      const { createRoot } = ReactDOM;
+
+      // Types (in TypeScript this would be in separate files)
+      const UserRoles = {
+        DRIVER: 'driver',
+        OFFICER: 'officer', 
+        ADMIN: 'admin'
+      };
+
+      const SessionStatuses = {
+        WAITING: 'waiting',
+        CONNECTED: 'connected',
+        IN_PROGRESS: 'in_progress',
+        COMPLETED: 'completed'
+      };
+
+      // Utility function for class names
+      const cn = (...classes) => {
+        return classes.filter(Boolean).join(' ');
+      };
+
+      // Authentication Context (simplified for demo)
+      const AuthContext = React.createContext({
+        user: null,
+        login: () => {},
+        logout: () => {},
+        isAuthenticated: false
+      });
+
+      const useAuth = () => React.useContext(AuthContext);
+
+      // Router Context (simplified client-side routing)
+      const RouterContext = React.createContext({
+        currentRoute: 'login',
+        navigate: () => {}
+      });
+
+      const useRouter = () => React.useContext(RouterContext);
+
+      // Authentication Provider
+      function AuthProvider({ children }) {
+        const [user, setUser] = useState(null);
+        const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+        const login = (email, password, role) => {
+          // Simulate authentication
+          const userData = {
+            id: '1',
+            email,
+            role,
+            profile: {
+              firstName: 'John',
+              lastName: 'Doe',
+              phone: '+1 (555) 123-4567',
+              kycStatus: 'pending'
+            }
+          };
+          setUser(userData);
+          setIsAuthenticated(true);
+          localStorage.setItem('traafik_user', JSON.stringify(userData));
+        };
+
+        const logout = () => {
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem('traafik_user');
+        };
+
+        // Check for existing session on load
+        useEffect(() => {
+          const savedUser = localStorage.getItem('traafik_user');
+          if (savedUser) {
+            const userData = JSON.parse(savedUser);
+            setUser(userData);
+            setIsAuthenticated(true);
+          }
+        }, []);
+
+        return (
+          <AuthContext.Provider value={{ user, login, logout, isAuthenticated }}>
+            {children}
+          </AuthContext.Provider>
+        );
+      }
+
+      // Router Provider
+      function RouterProvider({ children }) {
+        const [currentRoute, setCurrentRoute] = useState('login');
+        const { isAuthenticated } = useAuth();
+
+        const navigate = (route) => {
+          if (!isAuthenticated && route !== 'login') {
+            setCurrentRoute('login');
+            return;
+          }
+          setCurrentRoute(route);
+          window.history.pushState({}, '', `#${route}`);
+        };
+
+        // Handle browser back/forward
+        useEffect(() => {
+          const handlePopState = () => {
+            const hash = window.location.hash.slice(1);
+            if (hash) {
+              setCurrentRoute(hash);
+            }
+          };
+
+          window.addEventListener('popstate', handlePopState);
+          return () => window.removeEventListener('popstate', handlePopState);
+        }, []);
+
+        // Redirect to dashboard if authenticated
+        useEffect(() => {
+          if (isAuthenticated && currentRoute === 'login') {
+            navigate('dashboard');
+          } else if (!isAuthenticated && currentRoute !== 'login') {
+            navigate('login');
+          }
+        }, [isAuthenticated]);
+
+        return (
+          <RouterContext.Provider value={{ currentRoute, navigate }}>
+            {children}
+          </RouterContext.Provider>
+        );
+      }
+
+      // Layout Components
+      function AppShell({ children }) {
+        const { user, logout } = useAuth();
+        const { currentRoute, navigate } = useRouter();
+
+        if (!user) return children;
+
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <header className="border-b bg-white shadow-sm">
+              <div className="container mx-auto flex h-16 items-center justify-between px-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded bg-blue-600" />
+                  <span className="font-semibold text-lg">Traafik</span>
+                </div>
+                
+                <nav className="flex items-center gap-6">
+                  <button 
+                    onClick={() => navigate('dashboard')}
+                    className={cn(
+                      "text-sm font-medium hover:text-blue-600 transition-colors",
+                      currentRoute === 'dashboard' ? 'text-blue-600' : 'text-gray-600'
+                    )}
+                  >
+                    Dashboard
+                  </button>
+                  <button 
+                    onClick={() => navigate('session')}
+                    className={cn(
+                      "text-sm font-medium hover:text-blue-600 transition-colors",
+                      currentRoute === 'session' ? 'text-blue-600' : 'text-gray-600'
+                    )}
+                  >
+                    Session
+                  </button>
+                  <button 
+                    onClick={() => navigate('profile')}
+                    className={cn(
+                      "text-sm font-medium hover:text-blue-600 transition-colors",
+                      currentRoute === 'profile' ? 'text-blue-600' : 'text-gray-600'
+                    )}
+                  >
+                    Profile
+                  </button>
+                  
+                  {user.role === UserRoles.OFFICER && (
+                    <button 
+                      onClick={() => navigate('citations')}
+                      className={cn(
+                        "text-sm font-medium hover:text-blue-600 transition-colors",
+                        currentRoute === 'citations' ? 'text-blue-600' : 'text-gray-600'
+                      )}
+                    >
+                      Citations
+                    </button>
+                  )}
+                  
+                  {user.role === UserRoles.ADMIN && (
+                    <button 
+                      onClick={() => navigate('admin')}
+                      className={cn(
+                        "text-sm font-medium hover:text-blue-600 transition-colors",
+                        currentRoute === 'admin' ? 'text-blue-600' : 'text-gray-600'
+                      )}
+                    >
+                      Admin
+                    </button>
+                  )}
+                  
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span>{user.profile.firstName} {user.profile.lastName}</span>
+                    <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                      {user.role}
+                    </span>
+                  </div>
+                  
+                  <button 
+                    onClick={logout}
+                    className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
+                  >
+                    Logout
+                  </button>
+                </nav>
+              </div>
+            </header>
+            
+            <main className="container mx-auto py-8 px-4">
+              {children}
+            </main>
+          </div>
+        );
+      }
+
+      // Login Page
+      function LoginPage() {
+        const { login } = useAuth();
+        const [formData, setFormData] = useState({
+          email: '',
+          password: '',
+          role: UserRoles.DRIVER
+        });
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          login(formData.email, formData.password, formData.role);
+        };
+
+        const handleChange = (e) => {
+          setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+          });
+        };
+
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="max-w-md w-full space-y-8 p-8">
+              <div className="text-center">
+                <div className="h-12 w-12 rounded bg-blue-600 mx-auto mb-4" />
+                <h2 className="text-3xl font-bold text-gray-900">Sign in to Traafik</h2>
+                <p className="mt-2 text-gray-600">Remote traffic stops made simple</p>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="Email address"
+                    required
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                
+                <div>
+                  <input
+                    type="password"
+                    name="password"
+                    placeholder="Password"
+                    required
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                
+                <div>
+                  <select 
+                    name="role"
+                    value={formData.role}
+                    onChange={handleChange}
+                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  >
+                    <option value={UserRoles.DRIVER}>Driver</option>
+                    <option value={UserRoles.OFFICER}>Officer</option>
+                    <option value={UserRoles.ADMIN}>Admin</option>
+                  </select>
+                </div>
+                
+                <button 
+                  type="submit"
+                  className="w-full bg-blue-600 text-white p-3 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Sign In
+                </button>
+              </form>
+              
+              <div className="text-center">
+                <a href="#" className="text-blue-600 hover:underline text-sm">
+                  Don't have an account? Sign up
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Dashboard Page
+      function DashboardPage() {
+        const { user } = useAuth();
+        const { navigate } = useRouter();
+
+        const stats = [
+          {
+            title: 'Active Sessions',
+            value: '0',
+            description: 'No active sessions',
+            color: 'text-blue-600'
+          },
+          {
+            title: 'Citations',
+            value: '0', 
+            description: 'No recent citations',
+            color: 'text-blue-600'
+          },
+          {
+            title: 'KYC Status',
+            value: user.profile.kycStatus.charAt(0).toUpperCase() + user.profile.kycStatus.slice(1),
+            description: 'Complete verification',
+            color: user.profile.kycStatus === 'approved' ? 'text-green-600' : 'text-yellow-600'
+          }
+        ];
+
+        const quickActions = [
+          {
+            title: 'Start Session',
+            description: 'Begin a new traffic stop session',
+            action: () => navigate('session'),
+            style: 'bg-blue-600 text-white hover:bg-blue-700'
+          },
+          {
+            title: 'View Profile',
+            description: 'Manage your account settings',
+            action: () => navigate('profile'),
+            style: 'border border-gray-200 hover:bg-gray-50'
+          }
+        ];
+
+        const officerActions = [
+          {
+            title: 'Available for Stops',
+            description: 'Mark yourself as available',
+            action: () => console.log('Toggle availability'),
+            style: 'bg-green-600 text-white hover:bg-green-700'
+          },
+          {
+            title: 'Issue Citation',
+            description: 'Create a new citation',
+            action: () => navigate('citations'),
+            style: 'border border-gray-200 hover:bg-gray-50'
+          }
+        ];
+
+        return (
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <p className="text-gray-600">
+                Welcome to your Traafik dashboard ({user.role})
+              </p>
+            </div>
+            
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {stats.map((stat, index) => (
+                <div key={index} className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                  <h3 className="font-semibold mb-2 text-gray-900">{stat.title}</h3>
+                  <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+                  <p className="text-sm text-gray-500">{stat.description}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+              <h3 className="font-semibold mb-4 text-gray-900">Quick Actions</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {quickActions.map((action, index) => (
+                  <button 
+                    key={index}
+                    onClick={action.action}
+                    className={`p-4 rounded-md text-left transition-colors ${action.style}`}
+                  >
+                    <h4 className="font-medium">{action.title}</h4>
+                    <p className="text-sm opacity-90">{action.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Officer Tools */}
+            {user.role === UserRoles.OFFICER && (
+              <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                <h3 className="font-semibold mb-4 text-gray-900">Officer Tools</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {officerActions.map((action, index) => (
+                    <button 
+                      key={index}
+                      onClick={action.action}
+                      className={`p-4 rounded-md text-left transition-colors ${action.style}`}
+                    >
+                      <h4 className="font-medium">{action.title}</h4>
+                      <p className="text-sm opacity-90">{action.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // Session Page
+      function SessionPage() {
+        const [sessionStatus, setSessionStatus] = useState(SessionStatuses.WAITING);
+        const [currentStep, setCurrentStep] = useState(1);
+
+        const steps = [
+          { number: 1, title: 'Share Location', active: currentStep >= 1 },
+          { number: 2, title: 'Officer Verification', active: currentStep >= 2 },
+          { number: 3, title: 'Citation Review', active: currentStep >= 3 },
+          { number: 4, title: 'Payment', active: currentStep >= 4 }
+        ];
+
+        const nextStep = () => {
+          if (currentStep < 4) {
+            setCurrentStep(currentStep + 1);
+          }
+        };
+
+        return (
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Traffic Stop Session</h1>
+              <p className="text-gray-600">Manage your current traffic stop session</p>
+            </div>
+
+            {/* Session Status */}
+            <div className="bg-gray-100 p-6 rounded-lg">
+              <h3 className="font-semibold mb-4 text-gray-900">Session Status</h3>
+              <div className="flex items-center gap-4">
+                <div className={`h-3 w-3 rounded-full ${
+                  sessionStatus === SessionStatuses.WAITING ? 'bg-yellow-500' :
+                  sessionStatus === SessionStatuses.CONNECTED ? 'bg-green-500' :
+                  'bg-blue-500'
+                }`} />
+                <span className="text-gray-700">
+                  {sessionStatus === SessionStatuses.WAITING ? 'Waiting for connection...' :
+                   sessionStatus === SessionStatuses.CONNECTED ? 'Connected to officer' :
+                   'Session in progress'}
+                </span>
+                {sessionStatus === SessionStatuses.WAITING && (
+                  <button 
+                    onClick={() => setSessionStatus(SessionStatuses.CONNECTED)}
+                    className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  >
+                    Simulate Connection
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Location */}
+              <div className="space-y-6">
+                <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                  <h3 className="font-semibold mb-4 text-gray-900">Location</h3>
+                  <div className="h-48 bg-gray-100 rounded-md flex items-center justify-center">
+                    <p className="text-gray-500">Map will appear here</p>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    Current location: 123 Main St, City, State
+                  </p>
+                </div>
+              </div>
+
+              {/* Session Progress */}
+              <div className="space-y-6">
+                <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                  <h3 className="font-semibold mb-4 text-gray-900">Session Progress</h3>
+                  <div className="space-y-4">
+                    {steps.map((step) => (
+                      <div key={step.number} className="flex items-center gap-3">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                          step.active 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {step.number}
+                        </div>
+                        <span className={step.active ? 'text-gray-900' : 'text-gray-500'}>
+                          {step.title}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {currentStep < 4 && (
+                    <button 
+                      onClick={nextStep}
+                      className="mt-6 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      Continue to Next Step
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Profile Page
+      function ProfilePage() {
+        const { user } = useAuth();
+        const [formData, setFormData] = useState({
+          firstName: user.profile.firstName,
+          lastName: user.profile.lastName,
+          email: user.email,
+          phone: user.profile.phone
+        });
+
+        const handleChange = (e) => {
+          setFormData({
+            ...formData,
+            [e.target.name]: e.target.value
+          });
+        };
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          console.log('Updating profile:', formData);
+          // In a real app, this would call an API
+        };
+
+        const verificationItems = [
+          {
+            title: 'Identity Verification',
+            status: user.profile.kycStatus,
+            bgColor: user.profile.kycStatus === 'approved' ? 'bg-green-50' : 'bg-yellow-50',
+            textColor: user.profile.kycStatus === 'approved' ? 'text-green-600' : 'text-yellow-600'
+          },
+          {
+            title: 'Email Verification',
+            status: 'verified',
+            bgColor: 'bg-green-50',
+            textColor: 'text-green-600'
+          },
+          {
+            title: 'Phone Verification',
+            status: 'required',
+            bgColor: 'bg-red-50',
+            textColor: 'text-red-600'
+          }
+        ];
+
+        return (
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
+              <p className="text-gray-600">Manage your account settings and preferences</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Personal Information */}
+              <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                <h3 className="font-semibold mb-4 text-gray-900">Personal Information</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">First Name</label>
+                    <input 
+                      type="text" 
+                      name="firstName"
+                      value={formData.firstName}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Last Name</label>
+                    <input 
+                      type="text" 
+                      name="lastName"
+                      value={formData.lastName}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Email</label>
+                    <input 
+                      type="email" 
+                      name="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Phone</label>
+                    <input 
+                      type="tel" 
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <button 
+                    type="submit"
+                    className="w-full bg-blue-600 text-white p-3 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Update Profile
+                  </button>
+                </form>
+              </div>
+
+              {/* Verification Status */}
+              <div className="p-6 border border-gray-200 rounded-lg bg-white shadow-sm">
+                <h3 className="font-semibold mb-4 text-gray-900">Verification Status</h3>
+                <div className="space-y-4">
+                  {verificationItems.map((item, index) => (
+                    <div key={index} className={`flex items-center justify-between p-3 rounded-md ${item.bgColor}`}>
+                      <span className="text-gray-900">{item.title}</span>
+                      <span className={`font-medium ${item.textColor}`}>
+                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Route Component
+      function Router() {
+        const { currentRoute } = useRouter();
+        const { isAuthenticated } = useAuth();
+
+        if (!isAuthenticated) {
+          return <LoginPage />;
+        }
+
+        switch (currentRoute) {
+          case 'dashboard':
+            return <DashboardPage />;
+          case 'session':
+            return <SessionPage />;
+          case 'profile':
+            return <ProfilePage />;
+          default:
+            return <DashboardPage />;
+        }
+      }
+
+      // Main App
+      function App() {
+        return (
+          <AuthProvider>
+            <RouterProvider>
+              <AppShell>
+                <Router />
+              </AppShell>
+            </RouterProvider>
+          </AuthProvider>
+        );
+      }
+
+      // Render the app
+      createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>

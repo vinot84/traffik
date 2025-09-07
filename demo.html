@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traafik - Remote Traffic Stops</title>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+      const { useState } = React;
+      
+      function LoginPage({ onLogin }) {
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          const role = formData.get('role') || 'driver';
+          onLogin(role);
+        };
+
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="max-w-md w-full space-y-8 p-8">
+              <div className="text-center">
+                <div className="h-12 w-12 rounded bg-blue-600 mx-auto mb-4"></div>
+                <h2 className="text-3xl font-bold">Sign in to Traafik</h2>
+                <p className="mt-2 text-gray-600">Remote traffic stops made simple</p>
+              </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email address"
+                  required
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Password"
+                  required
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <select 
+                  name="role"
+                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="driver">Driver</option>
+                  <option value="officer">Officer</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button 
+                  type="submit"
+                  className="w-full bg-blue-600 text-white p-3 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Sign In
+                </button>
+              </form>
+              <div className="text-center">
+                <a href="#" className="text-blue-600 hover:underline">
+                  Don't have an account? Sign up
+                </a>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function DashboardPage({ userRole, onNavigate }) {
+        return (
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold">Dashboard</h1>
+              <p className="text-gray-600">Welcome to your Traafik dashboard ({userRole})</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                <h3 className="font-semibold mb-2">Active Sessions</h3>
+                <p className="text-2xl font-bold text-blue-600">0</p>
+                <p className="text-sm text-gray-500">No active sessions</p>
+              </div>
+              
+              <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                <h3 className="font-semibold mb-2">Citations</h3>
+                <p className="text-2xl font-bold text-blue-600">0</p>
+                <p className="text-sm text-gray-500">No recent citations</p>
+              </div>
+              
+              <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                <h3 className="font-semibold mb-2">KYC Status</h3>
+                <p className="text-2xl font-bold text-yellow-600">Pending</p>
+                <p className="text-sm text-gray-500">Complete verification</p>
+              </div>
+            </div>
+
+            <div className="p-6 border border-gray-200 rounded-lg bg-white">
+              <h3 className="font-semibold mb-4">Quick Actions</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button 
+                  onClick={() => onNavigate('session')}
+                  className="p-4 bg-blue-600 text-white rounded-md text-left hover:bg-blue-700 transition-colors"
+                >
+                  <h4 className="font-medium">Start Session</h4>
+                  <p className="text-sm opacity-90">Begin a new traffic stop session</p>
+                </button>
+                <button 
+                  onClick={() => onNavigate('profile')}
+                  className="p-4 border border-gray-200 rounded-md text-left hover:bg-gray-50 transition-colors"
+                >
+                  <h4 className="font-medium">View Profile</h4>
+                  <p className="text-sm text-gray-600">Manage your account settings</p>
+                </button>
+              </div>
+            </div>
+
+            {userRole === 'officer' && (
+              <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                <h3 className="font-semibold mb-4">Officer Tools</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button className="p-4 bg-green-600 text-white rounded-md text-left hover:bg-green-700 transition-colors">
+                    <h4 className="font-medium">Available for Stops</h4>
+                    <p className="text-sm opacity-90">Mark yourself as available</p>
+                  </button>
+                  <button className="p-4 border border-gray-200 rounded-md text-left hover:bg-gray-50 transition-colors">
+                    <h4 className="font-medium">Issue Citation</h4>
+                    <p className="text-sm text-gray-600">Create a new citation</p>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function SessionPage() {
+        return (
+          <div className="space-y-8">
+            <div>
+              <h1 className="text-3xl font-bold">Traffic Stop Session</h1>
+              <p className="text-gray-600">Manage your current traffic stop session</p>
+            </div>
+
+            <div className="bg-gray-100 p-6 rounded-lg">
+              <h3 className="font-semibold mb-4">Session Status</h3>
+              <div className="flex items-center gap-4">
+                <div className="h-3 w-3 bg-yellow-500 rounded-full"></div>
+                <span>Waiting for connection...</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                  <h3 className="font-semibold mb-4">Location</h3>
+                  <div className="h-48 bg-gray-100 rounded-md flex items-center justify-center">
+                    <p className="text-gray-500">Map will appear here</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-6 border border-gray-200 rounded-lg bg-white">
+                  <h3 className="font-semibold mb-4">Session Progress</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm">1</div>
+                      <span>Share Location</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">2</div>
+                      <span>Officer Verification</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">3</div>
+                      <span>Citation Review</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center text-sm">4</div>
+                      <span>Payment</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [currentPage, setCurrentPage] = useState('login');
+        const [isAuthenticated, setIsAuthenticated] = useState(false);
+        const [userRole, setUserRole] = useState('driver');
+
+        const handleLogin = (role = 'driver') => {
+          setIsAuthenticated(true);
+          setUserRole(role);
+          setCurrentPage('dashboard');
+        };
+
+        const handleLogout = () => {
+          setIsAuthenticated(false);
+          setCurrentPage('login');
+        };
+
+        const handleNavigation = (page) => {
+          if (isAuthenticated) {
+            setCurrentPage(page);
+          }
+        };
+
+        if (!isAuthenticated) {
+          return React.createElement(LoginPage, { onLogin: handleLogin });
+        }
+
+        return React.createElement('div', { className: 'min-h-screen bg-gray-50' },
+          React.createElement('header', { className: 'border-b bg-white' },
+            React.createElement('div', { className: 'container mx-auto flex h-16 items-center justify-between px-4' },
+              React.createElement('div', { className: 'flex items-center gap-2' },
+                React.createElement('div', { className: 'h-8 w-8 rounded bg-blue-600' }),
+                React.createElement('span', { className: 'font-semibold' }, 'Traafik')
+              ),
+              React.createElement('nav', { className: 'flex items-center gap-6' },
+                React.createElement('button', {
+                  onClick: () => handleNavigation('dashboard'),
+                  className: `text-sm font-medium hover:text-blue-600 ${currentPage === 'dashboard' ? 'text-blue-600' : 'text-gray-600'}`
+                }, 'Dashboard'),
+                React.createElement('button', {
+                  onClick: () => handleNavigation('session'),
+                  className: `text-sm font-medium hover:text-blue-600 ${currentPage === 'session' ? 'text-blue-600' : 'text-gray-600'}`
+                }, 'Session'),
+                React.createElement('button', {
+                  onClick: handleLogout,
+                  className: 'text-sm font-medium text-red-600 hover:text-red-700'
+                }, 'Logout')
+              )
+            )
+          ),
+          React.createElement('main', { className: 'container mx-auto py-8 px-4' },
+            currentPage === 'dashboard' && React.createElement(DashboardPage, { userRole, onNavigate: handleNavigation }),
+            currentPage === 'session' && React.createElement(SessionPage)
+          )
+        );
+      }
+
+      ReactDOM.render(React.createElement(App), document.getElementById('root'));
+    </script>
+  </body>
+</html>
