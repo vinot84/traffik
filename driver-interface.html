@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Traafik - Driver Interface</title>
+    
+    <!-- React and React DOM -->
+    <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+      body { 
+        font-family: system-ui, -apple-system, sans-serif; 
+        margin: 0;
+        padding: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+      
+      .chat-message {
+        animation: slideIn 0.3s ease-out;
+      }
+      
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
+      }
+      
+      .status-connected { background-color: #10b981; }
+      .status-waiting { background-color: #f59e0b; }
+      .status-offline { background-color: #ef4444; }
+      
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      
+      .notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #10b981;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        z-index: 1000;
+      }
+      
+      .notification.show {
+        transform: translateX(0);
+      }
+      
+      .location-input {
+        transition: all 0.3s ease;
+      }
+      
+      .location-input:focus {
+        transform: scale(1.02);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+      const { createRoot } = ReactDOM;
+
+      // Shared storage for communication between driver and officer
+      const SharedStorage = {
+        setItem: (key, value) => {
+          localStorage.setItem(`traafik_${key}`, JSON.stringify({
+            data: value,
+            timestamp: Date.now()
+          }));
+          // Trigger storage event for cross-tab communication
+          window.dispatchEvent(new StorageEvent('storage', {
+            key: `traafik_${key}`,
+            newValue: JSON.stringify({ data: value, timestamp: Date.now() })
+          }));
+        },
+        
+        getItem: (key) => {
+          const item = localStorage.getItem(`traafik_${key}`);
+          return item ? JSON.parse(item).data : null;
+        },
+        
+        subscribe: (key, callback) => {
+          const handleStorage = (e) => {
+            if (e.key === `traafik_${key}` && e.newValue) {
+              const parsed = JSON.parse(e.newValue);
+              callback(parsed.data);
+            }
+          };
+          window.addEventListener('storage', handleStorage);
+          return () => window.removeEventListener('storage', handleStorage);
+        }
+      };
+
+      // Notification Component
+      function Notification({ message, show, onClose, type = 'info' }) {
+        useEffect(() => {
+          if (show) {
+            const timer = setTimeout(onClose, 4000);
+            return () => clearTimeout(timer);
+          }
+        }, [show, onClose]);
+
+        const bgColor = type === 'error' ? '#ef4444' : type === 'warning' ? '#f59e0b' : '#10b981';
+
+        return (
+          <div 
+            className={`notification ${show ? 'show' : ''}`}
+            style={{ backgroundColor: bgColor }}
+          >
+            {message}
+          </div>
+        );
+      }
+
+      // Driver Application
+      function DriverApp() {
+        const [isLoggedIn, setIsLoggedIn] = useState(false);
+        const [email, setEmail] = useState('');
+        const [driverName, setDriverName] = useState('');
+        const [sessionActive, setSessionActive] = useState(false);
+        const [location, setLocation] = useState({ lat: '', lng: '' });
+        const [officerConnected, setOfficerConnected] = useState(false);
+        const [messages, setMessages] = useState([]);
+        const [currentMessage, setCurrentMessage] = useState('');
+        const [citation, setCitation] = useState(null);
+        const [notification, setNotification] = useState({ show: false, message: '', type: 'info' });
+        const [officerInfo, setOfficerInfo] = useState(null);
+        const messagesEndRef = useRef(null);
+
+        const showNotification = (message, type = 'info') => {
+          setNotification({ show: true, message, type });
+        };
+
+        const hideNotification = () => {
+          setNotification({ show: false, message: '', type: 'info' });
+        };
+
+        const scrollToBottom = () => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        };
+
+        useEffect(() => {
+          scrollToBottom();
+        }, [messages]);
+
+        // Listen for officer connections and messages
+        useEffect(() => {
+          const unsubscribeOfficer = SharedStorage.subscribe('officer_connection', (data) => {
+            if (data.driverEmail === email) {
+              setOfficerConnected(true);
+              setOfficerInfo(data.officer);
+              showNotification(`Officer ${data.officer.name} has connected to your session!`);
+            }
+          });
+
+          const unsubscribeMessages = SharedStorage.subscribe('officer_messages', (data) => {
+            if (data.driverEmail === email) {
+              setMessages(prev => [...prev, {
+                id: Date.now(),
+                text: data.message,
+                sender: 'officer',
+                timestamp: new Date().toLocaleTimeString(),
+                senderName: data.officerName
+              }]);
+            }
+          });
+
+          const unsubscribeCitation = SharedStorage.subscribe('citation_issued', (data) => {
+            if (data.driverEmail === email) {
+              setCitation(data.citation);
+              showNotification(`Citation issued: ${data.citation.violation} - $${data.citation.amount}`, 'warning');
+            }
+          });
+
+          return () => {
+            unsubscribeOfficer();
+            unsubscribeMessages();
+            unsubscribeCitation();
+          };
+        }, [email]);
+
+        const handleLogin = (e) => {
+          e.preventDefault();
+          if (email.startsWith('d') && email.includes('@')) {
+            const name = email.split('@')[0].replace('d', 'Driver ').toUpperCase();
+            setDriverName(name);
+            setIsLoggedIn(true);
+            showNotification(`Welcome ${name}! You can now initiate a traffic stop session.`);
+          } else {
+            showNotification('Please enter an email starting with "d" (e.g., driver@example.com)', 'error');
+          }
+        };
+
+        const getCurrentLocation = () => {
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                setLocation({
+                  lat: position.coords.latitude.toFixed(6),
+                  lng: position.coords.longitude.toFixed(6)
+                });
+                showNotification('Location acquired successfully!');
+              },
+              (error) => {
+                showNotification('Unable to get location. Please enter manually.', 'warning');
+                // Set default San Francisco location
+                setLocation({ lat: '37.7749', lng: '-122.4194' });
+              }
+            );
+          } else {
+            showNotification('Geolocation not supported. Please enter manually.', 'warning');
+            setLocation({ lat: '37.7749', lng: '-122.4194' });
+          }
+        };
+
+        const shareLocationWithOfficer = () => {
+          if (!location.lat || !location.lng) {
+            showNotification('Please enter your location first!', 'error');
+            return;
+          }
+
+          const sessionData = {
+            driverEmail: email,
+            driverName: driverName,
+            location: location,
+            timestamp: new Date().toISOString(),
+            status: 'waiting_for_officer'
+          };
+
+          SharedStorage.setItem('driver_session', sessionData);
+          setSessionActive(true);
+          showNotification('Location shared! Waiting for officer to connect...');
+        };
+
+        const sendMessage = () => {
+          if (!currentMessage.trim()) return;
+
+          const message = {
+            id: Date.now(),
+            text: currentMessage,
+            sender: 'driver',
+            timestamp: new Date().toLocaleTimeString(),
+            senderName: driverName
+          };
+
+          setMessages(prev => [...prev, message]);
+
+          // Send to officer
+          SharedStorage.setItem('driver_messages', {
+            driverEmail: email,
+            message: currentMessage,
+            driverName: driverName,
+            timestamp: Date.now()
+          });
+
+          setCurrentMessage('');
+        };
+
+        const payFine = () => {
+          if (!citation) return;
+
+          // Simulate payment processing
+          showNotification('Processing payment...', 'info');
+          
+          setTimeout(() => {
+            const paidCitation = { ...citation, status: 'paid', paidAt: new Date().toISOString() };
+            setCitation(paidCitation);
+            
+            // Notify officer of payment
+            SharedStorage.setItem('payment_completed', {
+              driverEmail: email,
+              citation: paidCitation,
+              timestamp: Date.now()
+            });
+            
+            showNotification('Payment successful! Citation has been resolved.');
+          }, 2000);
+        };
+
+        if (!isLoggedIn) {
+          return (
+            <div className="min-h-screen flex items-center justify-center p-4">
+              <Notification 
+                message={notification.message} 
+                show={notification.show} 
+                onClose={hideNotification}
+                type={notification.type}
+              />
+              
+              <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
+                <div className="text-center mb-6">
+                  <div className="w-16 h-16 bg-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                    <span className="text-white text-2xl">🚗</span>
+                  </div>
+                  <h1 className="text-2xl font-bold text-gray-900">Driver Login</h1>
+                  <p className="text-gray-600">Traafik Traffic Stop System</p>
+                </div>
+                
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email Address (must start with 'd')
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="driver@example.com"
+                      required
+                      className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white p-3 rounded-md font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Login as Driver
+                  </button>
+                </form>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Notification 
+              message={notification.message} 
+              show={notification.show} 
+              onClose={hideNotification}
+              type={notification.type}
+            />
+            
+            {/* Header */}
+            <div className="bg-white shadow-sm border-b">
+              <div className="max-w-6xl mx-auto px-4 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-lg">🚗</span>
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-semibold text-gray-900">Driver Interface</h1>
+                      <p className="text-sm text-gray-600">{driverName} ({email})</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <span className={`status-indicator ${officerConnected ? 'status-connected' : sessionActive ? 'status-waiting' : 'status-offline'}`}></span>
+                      <span className="text-sm text-gray-600">
+                        {officerConnected ? 'Officer Connected' : sessionActive ? 'Waiting for Officer' : 'Offline'}
+                      </span>
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setIsLoggedIn(false);
+                        setSessionActive(false);
+                        setOfficerConnected(false);
+                        setMessages([]);
+                        setCitation(null);
+                      }}
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="max-w-6xl mx-auto p-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Session Management */}
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-900">Traffic Stop Session</h2>
+                  
+                  {!sessionActive ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Latitude
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={location.lat}
+                            onChange={(e) => setLocation({...location, lat: e.target.value})}
+                            placeholder="37.7749"
+                            className="location-input w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Longitude
+                          </label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={location.lng}
+                            onChange={(e) => setLocation({...location, lng: e.target.value})}
+                            placeholder="-122.4194"
+                            className="location-input w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={getCurrentLocation}
+                          className="flex-1 bg-gray-600 text-white p-3 rounded-md font-medium hover:bg-gray-700 transition-colors"
+                        >
+                          📍 Get Current Location
+                        </button>
+                        
+                        <button
+                          onClick={shareLocationWithOfficer}
+                          disabled={!location.lat || !location.lng}
+                          className="flex-1 bg-blue-600 text-white p-3 rounded-md font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          🚨 Initiate Traffic Stop
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 p-4 rounded-md border-l-4 border-blue-500">
+                        <h3 className="font-medium text-blue-900 mb-2">Session Active</h3>
+                        <div className="text-sm text-blue-800 space-y-1">
+                          <div><strong>Location:</strong> {location.lat}, {location.lng}</div>
+                          <div><strong>Status:</strong> {officerConnected ? 'Officer Connected' : 'Waiting for Officer'}</div>
+                          {officerInfo && (
+                            <div><strong>Officer:</strong> {officerInfo.name} (Badge #{officerInfo.badge})</div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => {
+                          setSessionActive(false);
+                          setOfficerConnected(false);
+                          setMessages([]);
+                          SharedStorage.setItem('session_ended', { driverEmail: email });
+                          showNotification('Session ended.');
+                        }}
+                        className="w-full bg-red-600 text-white p-3 rounded-md font-medium hover:bg-red-700 transition-colors"
+                      >
+                        End Session
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Communication Panel */}
+                <div className="bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-900">Communication</h2>
+                  
+                  {officerConnected ? (
+                    <div className="space-y-4">
+                      {/* Messages */}
+                      <div className="border rounded-md p-4 h-64 overflow-y-auto bg-gray-50">
+                        {messages.length === 0 ? (
+                          <div className="text-center text-gray-500 py-8">
+                            No messages yet. Start a conversation with the officer.
+                          </div>
+                        ) : (
+                          messages.map((msg) => (
+                            <div key={msg.id} className={`chat-message mb-3 ${msg.sender === 'driver' ? 'text-right' : 'text-left'}`}>
+                              <div className={`inline-block max-w-xs px-3 py-2 rounded-lg ${
+                                msg.sender === 'driver' 
+                                  ? 'bg-blue-600 text-white' 
+                                  : 'bg-white border border-gray-200'
+                              }`}>
+                                <div className="text-sm">{msg.text}</div>
+                                <div className={`text-xs mt-1 ${msg.sender === 'driver' ? 'text-blue-100' : 'text-gray-500'}`}>
+                                  {msg.senderName} • {msg.timestamp}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        <div ref={messagesEndRef} />
+                      </div>
+                      
+                      {/* Message Input */}
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          value={currentMessage}
+                          onChange={(e) => setCurrentMessage(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                          placeholder="Type your message..."
+                          className="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        />
+                        <button
+                          onClick={sendMessage}
+                          disabled={!currentMessage.trim()}
+                          className="px-6 py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-8">
+                      {sessionActive ? 'Waiting for officer to connect...' : 'Start a session to communicate with an officer.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Citation Panel */}
+              {citation && (
+                <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-900">Citation Issued</h2>
+                  
+                  <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div><strong>Violation:</strong> {citation.violation}</div>
+                      <div><strong>Fine Amount:</strong> ${citation.amount}</div>
+                      <div><strong>Citation #:</strong> {citation.number}</div>
+                      <div><strong>Status:</strong> {citation.status}</div>
+                      <div><strong>Due Date:</strong> {citation.dueDate}</div>
+                      {citation.paidAt && (
+                        <div><strong>Paid On:</strong> {new Date(citation.paidAt).toLocaleDateString()}</div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {citation.status !== 'paid' && (
+                    <div className="flex space-x-4">
+                      <button
+                        onClick={payFine}
+                        className="bg-green-600 text-white px-6 py-3 rounded-md font-medium hover:bg-green-700 transition-colors"
+                      >
+                        💳 Pay Fine (${citation.amount})
+                      </button>
+                      
+                      <button
+                        onClick={() => showNotification('Contest feature coming soon!', 'info')}
+                        className="bg-gray-600 text-white px-6 py-3 rounded-md font-medium hover:bg-gray-700 transition-colors"
+                      >
+                        📋 Contest Citation
+                      </button>
+                    </div>
+                  )}
+                  
+                  {citation.status === 'paid' && (
+                    <div className="bg-green-50 border-l-4 border-green-500 p-4">
+                      <div className="flex items-center">
+                        <span className="text-green-600 text-lg mr-2">✅</span>
+                        <span className="text-green-800 font-medium">Citation has been paid successfully!</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Render the app
+      createRoot(document.getElementById('root')).render(<DriverApp />);
+    </script>
+  </body>
+</html>
