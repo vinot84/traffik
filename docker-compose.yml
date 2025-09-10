@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: citations
+      POSTGRES_USER: citations_user
+      POSTGRES_PASSWORD: citations_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citations_user -d citations"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-svc:
+    build: ./services/auth-svc
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://citations_user:citations_pass@postgres:5432/citations
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-change-in-production}
+      - JWT_EXPIRES_IN=1h
+      - REFRESH_EXPIRES_IN=7d
+      - PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/auth-svc:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  driver-svc:
+    build: ./services/driver-svc
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://citations_user:citations_pass@postgres:5432/citations
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-change-in-production}
+      - AUTH_SERVICE_URL=http://auth-svc:3000
+      - UPLOAD_MAX_SIZE=10485760
+      - PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/driver-svc:/app
+      - /app/node_modules
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  citation-svc:
+    build: ./services/citation-svc
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://citations_user:citations_pass@postgres:5432/citations
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-change-in-production}
+      - AUTH_SERVICE_URL=http://auth-svc:3000
+      - DRIVER_SERVICE_URL=http://driver-svc:3000
+      - PROXIMITY_RADIUS_METERS=100
+      - PORT=3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./services/citation-svc:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  web-portal:
+    build: ./web/portal
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080
+    volumes:
+      - ./web/portal:/app
+      - /app/node_modules
+    depends_on:
+      - auth-svc
+      - driver-svc
+      - citation-svc
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-svc
+      - driver-svc
+      - citation-svc
+      - web-portal
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: citation-network

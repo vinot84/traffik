@@ -1,0 +1,233 @@
+import SwiftUI
+import PlaygroundSupport
+
+struct CitationApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+struct ContentView: View {
+    @State private var isLoggedIn = false
+    
+    var body: some View {
+        if isLoggedIn {
+            TabView {
+                CitationListView()
+                    .tabItem {
+                        Image(systemName: "doc.text")
+                        Text("Citations")
+                    }
+                
+                ProfileView()
+                    .tabItem {
+                        Image(systemName: "person.circle")
+                        Text("Profile")
+                    }
+            }
+        } else {
+            LoginView(isLoggedIn: $isLoggedIn)
+        }
+    }
+}
+
+struct LoginView: View {
+    @Binding var isLoggedIn: Bool
+    @State private var email = "user@test.com"
+    @State private var password = "user123"
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                VStack(spacing: 20) {
+                    Image(systemName: "shield.checkered")
+                        .font(.system(size: 80))
+                        .foregroundColor(.blue)
+                    
+                    Text("Citation System")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("User Mobile App")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                
+                VStack(spacing: 15) {
+                    TextField("Email", text: $email)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    
+                    SecureField("Password", text: $password)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    
+                    Button("Sign In") {
+                        withAnimation {
+                            isLoggedIn = true
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                
+                VStack(spacing: 5) {
+                    Text("Demo Credentials")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("user@test.com / user123")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            .navigationBarHidden(true)
+        }
+    }
+}
+
+struct CitationListView: View {
+    let citations = [
+        Citation(id: "CT000001", type: "Speeding", amount: 150.00, status: .pending, location: "Main St & 1st Ave"),
+        Citation(id: "CT000002", type: "Parking", amount: 75.00, status: .paid, location: "Downtown Plaza"),
+        Citation(id: "CT000003", type: "Red Light", amount: 200.00, status: .overdue, location: "Oak St & Park Ave")
+    ]
+    
+    var body: some View {
+        NavigationView {
+            List(citations) { citation in
+                CitationRowView(citation: citation)
+            }
+            .navigationTitle("My Citations")
+        }
+    }
+}
+
+struct CitationRowView: View {
+    let citation: Citation
+    
+    var statusColor: Color {
+        switch citation.status {
+        case .paid: return .green
+        case .pending: return .orange
+        case .overdue: return .red
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Citation #\(citation.id)")
+                    .font(.headline)
+                Spacer()
+                Text(citation.status.rawValue.uppercased())
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(statusColor.opacity(0.2))
+                    .foregroundColor(statusColor)
+                    .cornerRadius(6)
+            }
+            
+            Text(citation.type)
+                .font(.subheadline)
+                .foregroundColor(.blue)
+            
+            HStack {
+                Label("$\(String(format: "%.2f", citation.amount))", systemImage: "dollarsign.circle")
+                    .font(.caption)
+                Spacer()
+                Label(citation.location, systemImage: "location")
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+            .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+struct ProfileView: View {
+    var body: some View {
+        NavigationView {
+            List {
+                Section("User Information") {
+                    HStack {
+                        Text("Name")
+                        Spacer()
+                        Text("John Doe")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Email")
+                        Spacer()
+                        Text("user@test.com")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("License")
+                        Spacer()
+                        Text("DL123456789")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section("Citations Summary") {
+                    HStack {
+                        Text("Total Citations")
+                        Spacer()
+                        Text("3")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Total Amount")
+                        Spacer()
+                        Text("$425.00")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text("1 Paid, 1 Pending, 1 Overdue")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section {
+                    Button("Sign Out") {
+                        // Handle sign out
+                    }
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .navigationTitle("Profile")
+        }
+    }
+}
+
+struct Citation: Identifiable {
+    let id: String
+    let type: String
+    let amount: Double
+    let status: CitationStatus
+    let location: String
+}
+
+enum CitationStatus: String, CaseIterable {
+    case pending = "pending"
+    case paid = "paid"  
+    case overdue = "overdue"
+}
+
+// Set up the playground
+let contentView = ContentView()
+PlaygroundPage.current.setLiveView(contentView)
